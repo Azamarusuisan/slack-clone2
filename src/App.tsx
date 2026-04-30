@@ -1,7 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Sheet,
@@ -9,7 +8,11 @@ import {
   SheetTrigger,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { channels, messages } from '@/data/messages'
+import {
+  channels,
+  messages as initialMessages,
+  type Message,
+} from '@/data/messages'
 import { directMessages } from '@/data/dms'
 
 type SelectedItem =
@@ -100,6 +103,9 @@ function App() {
     id: channels[0].id,
   })
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [messages, setMessages] = useState<Message[]>(initialMessages)
+  const [input, setInput] = useState('')
+  const endRef = useRef<HTMLDivElement>(null)
 
   const selectedChannel =
     selectedItem.type === 'channel'
@@ -114,9 +120,27 @@ function App() {
     (m) => m.type === selectedItem.type && m.parentId === selectedItem.id,
   )
 
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
   const handleSelect = (item: SelectedItem) => {
     setSelectedItem(item)
     setMobileOpen(false)
+  }
+
+  const handleSend = () => {
+    if (!input.trim()) return
+    const newMessage: Message = {
+      id: crypto.randomUUID(),
+      type: selectedItem.type,
+      parentId: selectedItem.id,
+      userName: '自分',
+      body: input,
+      createdAt: new Date().toISOString(),
+    }
+    setMessages((prev) => [...prev, newMessage])
+    setInput('')
   }
 
   const headerLabel = selectedChannel
@@ -186,20 +210,36 @@ function App() {
                         {message.createdAt}
                       </span>
                     </div>
-                    <p className="text-sm">{message.body}</p>
+                    <p className="text-sm whitespace-pre-wrap">{message.body}</p>
                   </div>
                 </div>
               )
             })
           )}
+          <div ref={endRef} />
         </div>
 
         <div className="sticky bottom-0 bg-background border-t px-4 md:px-6 py-4">
           <form
-            className="flex gap-2"
-            onSubmit={(e) => e.preventDefault()}
+            className="flex gap-2 items-end"
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleSend()
+            }}
           >
-            <Input placeholder={inputPlaceholder} className="flex-1" />
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSend()
+                }
+              }}
+              placeholder={inputPlaceholder}
+              rows={1}
+              className="flex-1 min-h-9 max-h-40 resize-none rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+            />
             <Button type="submit">送信</Button>
           </form>
         </div>
