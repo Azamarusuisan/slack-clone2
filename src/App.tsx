@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Menu } from 'lucide-react'
+import { Menu, Pencil, Smile, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   Sheet,
   SheetContent,
@@ -105,6 +111,8 @@ function App() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [input, setInput] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editBody, setEditBody] = useState('')
   const endRef = useRef<HTMLDivElement>(null)
 
   const selectedChannel =
@@ -138,10 +146,50 @@ function App() {
       userName: '自分',
       body: input,
       createdAt: new Date().toISOString(),
+      reactions: {},
     }
     setMessages((prev) => [...prev, newMessage])
     setInput('')
   }
+
+  const handleStartEdit = (id: string, body: string) => {
+    setEditingId(id)
+    setEditBody(body)
+  }
+
+  const handleSaveEdit = (id: string) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, body: editBody } : m)),
+    )
+    setEditingId(null)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingId(null)
+  }
+
+  const handleDelete = (id: string) => {
+    if (!window.confirm('削除しますか？')) return
+    setMessages((prev) => prev.filter((m) => m.id !== id))
+  }
+
+  const handleReact = (id: string, emoji: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === id
+          ? {
+              ...m,
+              reactions: {
+                ...m.reactions,
+                [emoji]: (m.reactions[emoji] ?? 0) + 1,
+              },
+            }
+          : m,
+      ),
+    )
+  }
+
+  const REACTION_EMOJIS = ['👍', '❤️', '😂', '🎉', '😮']
 
   const headerLabel = selectedChannel
     ? `# ${selectedChannel.name}`
@@ -198,20 +246,121 @@ function App() {
                 .join('')
                 .slice(0, 2)
                 .toUpperCase()
+              const isEditing = editingId === message.id
               return (
-                <div key={message.id} className="flex gap-3">
+                <div
+                  key={message.id}
+                  className="group relative flex gap-3 rounded px-2 py-1 hover:bg-muted/50"
+                >
                   <Avatar className="h-9 w-9">
                     <AvatarFallback>{initials}</AvatarFallback>
                   </Avatar>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2">
                       <span className="font-semibold">{message.userName}</span>
                       <span className="text-xs text-muted-foreground">
                         {message.createdAt}
                       </span>
                     </div>
-                    <p className="text-sm whitespace-pre-wrap">{message.body}</p>
+                    {isEditing ? (
+                      <div className="flex flex-col gap-2 mt-1">
+                        <textarea
+                          value={editBody}
+                          onChange={(e) => setEditBody(e.target.value)}
+                          rows={2}
+                          className="w-full resize-none rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleSaveEdit(message.id)}
+                          >
+                            保存
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={handleCancelEdit}
+                          >
+                            キャンセル
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm whitespace-pre-wrap">{message.body}</p>
+                        {Object.entries(message.reactions).some(
+                          ([, count]) => count > 0,
+                        ) && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {Object.entries(message.reactions)
+                              .filter(([, count]) => count > 0)
+                              .map(([emoji, count]) => (
+                                <Badge
+                                  key={emoji}
+                                  onClick={() => handleReact(message.id, emoji)}
+                                >
+                                  <span>{emoji}</span>
+                                  <span>{count}</span>
+                                </Badge>
+                              ))}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
+                  {!isEditing && (
+                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition flex gap-1">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            aria-label="リアクション"
+                          >
+                            <Smile className="h-4 w-4" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="flex gap-1" align="end">
+                          {REACTION_EMOJIS.map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => handleReact(message.id, emoji)}
+                              className="text-lg leading-none rounded p-1 hover:bg-muted"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </PopoverContent>
+                      </Popover>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        aria-label="編集"
+                        onClick={() => handleStartEdit(message.id, message.body)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        aria-label="削除"
+                        onClick={() => handleDelete(message.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )
             })

@@ -10,6 +10,7 @@ export type Message = {
   userName: string
   body: string
   createdAt: string
+  reactions: { [emoji: string]: number }
 }
 
 export const channels: Channel[] = [
@@ -29,6 +30,7 @@ export const messages: Message[] = [
     userName: 'Hiroshi Tanaka',
     body: 'おはようございます！今日もよろしくお願いします。',
     createdAt: '09:02',
+    reactions: {},
   },
   {
     id: 'm-general-2',
@@ -37,6 +39,7 @@ export const messages: Message[] = [
     userName: 'Aiko Sato',
     body: 'おはようございます。10時から定例ありますね。',
     createdAt: '09:14',
+    reactions: {},
   },
   {
     id: 'm-general-3',
@@ -45,6 +48,7 @@ export const messages: Message[] = [
     userName: 'Yuki Nakamura',
     body: 'お昼休憩入ります〜🍜',
     createdAt: '12:30',
+    reactions: {},
   },
   {
     id: 'm-general-4',
@@ -53,6 +57,7 @@ export const messages: Message[] = [
     userName: 'Mika Suzuki',
     body: '本日もお疲れさまでした！',
     createdAt: '17:55',
+    reactions: {},
   },
 
   // # random
@@ -63,6 +68,7 @@ export const messages: Message[] = [
     userName: 'Kenji Yamada',
     body: '近所にできた新しいカフェ、抹茶ラテが美味しかったです☕️',
     createdAt: '10:23',
+    reactions: {},
   },
   {
     id: 'm-random-2',
@@ -71,6 +77,7 @@ export const messages: Message[] = [
     userName: 'Aiko Sato',
     body: '週末おすすめの本ありますか？技術書じゃなくて小説が読みたい気分です📚',
     createdAt: '15:47',
+    reactions: {},
   },
   {
     id: 'm-random-3',
@@ -79,6 +86,7 @@ export const messages: Message[] = [
     userName: 'Hiroshi Tanaka',
     body: '昨日のサッカー観た人いる？延長戦アツかった⚽️',
     createdAt: '16:20',
+    reactions: {},
   },
 
   // # project-a
@@ -89,6 +97,7 @@ export const messages: Message[] = [
     userName: 'Mika Suzuki',
     body: 'API のレスポンス仕様、PR にコメント残しました。確認お願いします。',
     createdAt: '11:05',
+    reactions: {},
   },
   {
     id: 'm-project-a-2',
@@ -97,6 +106,7 @@ export const messages: Message[] = [
     userName: 'Hiroshi Tanaka',
     body: 'バックエンド側の修正マージ済みです。検証よろしくお願いします。',
     createdAt: '14:18',
+    reactions: {},
   },
   {
     id: 'm-project-a-3',
@@ -105,6 +115,7 @@ export const messages: Message[] = [
     userName: 'Yuki Nakamura',
     body: 'スプリントレビューの資料、ドラフト版を共有しました。',
     createdAt: '15:02',
+    reactions: {},
   },
   {
     id: 'm-project-a-4',
@@ -113,6 +124,7 @@ export const messages: Message[] = [
     userName: 'Aiko Sato',
     body: 'QA 環境で再現できました。チケット切ります。',
     createdAt: '16:45',
+    reactions: {},
   },
 
   // # design
@@ -123,6 +135,7 @@ export const messages: Message[] = [
     userName: 'Ryo Kobayashi',
     body: 'ロゴの新パターンを Figma に上げました。意見ください。',
     createdAt: '11:42',
+    reactions: {},
   },
   {
     id: 'm-design-2',
@@ -131,6 +144,7 @@ export const messages: Message[] = [
     userName: 'Mika Suzuki',
     body: 'カラーパレット、A 案のほうがコントラスト的に読みやすそうです。',
     createdAt: '13:08',
+    reactions: {},
   },
   {
     id: 'm-design-3',
@@ -139,6 +153,7 @@ export const messages: Message[] = [
     userName: 'Ryo Kobayashi',
     body: 'モバイル時のヘッダー高さは 56px に統一しましょう。',
     createdAt: '14:55',
+    reactions: {},
   },
 
   // # announcements
@@ -149,6 +164,7 @@ export const messages: Message[] = [
     userName: 'Admin',
     body: '【お知らせ】明日メンテナンスのため 22:00-23:00 サービス停止します。',
     createdAt: '13:00',
+    reactions: {},
   },
   {
     id: 'm-announcements-2',
@@ -157,6 +173,7 @@ export const messages: Message[] = [
     userName: 'Admin',
     body: '【人事】来月から新メンバーが2名ジョインします🎉',
     createdAt: '15:30',
+    reactions: {},
   },
   {
     id: 'm-announcements-3',
@@ -165,6 +182,7 @@ export const messages: Message[] = [
     userName: 'Admin',
     body: '【リマインド】月末の勤怠提出を忘れずにお願いします。',
     createdAt: '17:00',
+    reactions: {},
   },
 
   // DM 田中
@@ -175,6 +193,7 @@ export const messages: Message[] = [
     userName: '田中',
     body: 'お疲れさまです、来週のMTGの件ですが少し時間いただけますか？',
     createdAt: '10:05',
+    reactions: {},
   },
   {
     id: 'm-dm-tanaka-2',
@@ -183,6 +202,7 @@ export const messages: Message[] = [
     userName: 'You',
     body: '大丈夫です、火曜の午後ならいつでも空いてます。',
     createdAt: '10:12',
+    reactions: {},
   },
   {
     id: 'm-dm-tanaka-3',
@@ -191,6 +211,7 @@ export const messages: Message[] = [
     userName: '田中',
     body: 'ありがとうございます、ではカレンダー入れておきます🙏',
     createdAt: '10:14',
+    reactions: {},
   },
 
   // DM 鈴木
@@ -201,6 +222,7 @@ export const messages: Message[] = [
     userName: '鈴木',
     body: '先日の議事録、共有フォルダにアップしました。',
     createdAt: '17:30',
+    reactions: {},
   },
   {
     id: 'm-dm-suzuki-2',
@@ -209,6 +231,7 @@ export const messages: Message[] = [
     userName: 'You',
     body: '確認しました！要点きれいにまとまっててありがたいです。',
     createdAt: '18:02',
+    reactions: {},
   },
   {
     id: 'm-dm-suzuki-3',
@@ -217,6 +240,7 @@ export const messages: Message[] = [
     userName: '鈴木',
     body: '今日はもう上がります、また明日！',
     createdAt: '18:45',
+    reactions: {},
   },
   {
     id: 'm-dm-suzuki-4',
@@ -225,6 +249,7 @@ export const messages: Message[] = [
     userName: 'You',
     body: 'お疲れさまでした〜',
     createdAt: '18:46',
+    reactions: {},
   },
 
   // DM 佐藤
@@ -235,6 +260,7 @@ export const messages: Message[] = [
     userName: '佐藤',
     body: 'お昼ごはん、今日は外食しません？',
     createdAt: '11:50',
+    reactions: {},
   },
   {
     id: 'm-dm-sato-2',
@@ -243,6 +269,7 @@ export const messages: Message[] = [
     userName: 'You',
     body: 'いいですね、駅前の新しいラーメン屋気になってました🍜',
     createdAt: '11:52',
+    reactions: {},
   },
   {
     id: 'm-dm-sato-3',
@@ -251,5 +278,6 @@ export const messages: Message[] = [
     userName: '佐藤',
     body: 'では12時にエントランスで！',
     createdAt: '11:54',
+    reactions: {},
   },
 ]
