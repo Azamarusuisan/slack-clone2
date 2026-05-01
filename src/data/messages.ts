@@ -8,6 +8,7 @@ export type Message = {
   type: 'channel' | 'dm'
   parentId: string
   userName: string
+  userId?: string | null
   body: string
   createdAt: string
   reactions: { [emoji: string]: number }

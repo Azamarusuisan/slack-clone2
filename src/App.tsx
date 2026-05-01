@@ -22,6 +22,31 @@ import {
 } from '@/data/messages'
 import { directMessages } from '@/data/dms'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/useAuth'
+
+type DBMessageRow = {
+  id: string
+  channel_id: string
+  user_name: string
+  user_id: string | null
+  content: string
+  created_at: string
+  image_url: string | null
+}
+
+function rowToMessage(row: DBMessageRow): Message {
+  return {
+    id: row.id,
+    type: 'channel',
+    parentId: row.channel_id,
+    userName: row.user_name,
+    userId: row.user_id,
+    body: row.content,
+    createdAt: row.created_at,
+    reactions: {},
+    imageUrl: row.image_url,
+  }
+}
 
 async function loadChannelMessages(channelId: string): Promise<Message[] | null> {
   const { data, error } = await supabase
@@ -33,16 +58,7 @@ async function loadChannelMessages(channelId: string): Promise<Message[] | null>
     console.error(error)
     return null
   }
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    type: 'channel',
-    parentId: row.channel_id,
-    userName: row.user_name,
-    body: row.content,
-    createdAt: row.created_at,
-    reactions: {},
-    imageUrl: row.image_url,
-  }))
+  return (data ?? []).map((row) => rowToMessage(row as DBMessageRow))
 }
 
 type SelectedItem =
@@ -53,9 +69,21 @@ type SidebarContentProps = {
   channels: Channel[]
   selectedItem: SelectedItem
   onSelect: (item: SelectedItem) => void
+  isAuthenticated: boolean
+  memberChannelIds: Set<string>
+  onJoin: (channelId: string) => void
+  onLeave: (channelId: string) => void
 }
 
-function SidebarContent({ channels, selectedItem, onSelect }: SidebarContentProps) {
+function SidebarContent({
+  channels,
+  selectedItem,
+  onSelect,
+  isAuthenticated,
+  memberChannelIds,
+  onJoin,
+  onLeave,
+}: SidebarContentProps) {
   return (
     <div className="flex h-full flex-col bg-[#611f69] text-white">
       <div className="px-4 py-4 border-b border-white/10">
@@ -69,12 +97,13 @@ function SidebarContent({ channels, selectedItem, onSelect }: SidebarContentProp
           {channels.map((channel) => {
             const isSelected =
               selectedItem.type === 'channel' && selectedItem.id === channel.id
+            const isMember = memberChannelIds.has(channel.id)
             return (
-              <li key={channel.id}>
+              <li key={channel.id} className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => onSelect({ type: 'channel', id: channel.id })}
-                  className={`w-full text-left px-2 py-1.5 rounded text-sm transition-colors ${
+                  className={`flex-1 text-left px-2 py-1.5 rounded text-sm transition-colors ${
                     isSelected
                       ? 'bg-[#1264A3] text-white font-medium'
                       : 'text-white/90 hover:bg-white/10'
@@ -82,6 +111,21 @@ function SidebarContent({ channels, selectedItem, onSelect }: SidebarContentProp
                 >
                   # {channel.name}
                 </button>
+                {isAuthenticated && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-6 px-2 text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (isMember) onLeave(channel.id)
+                      else onJoin(channel.id)
+                    }}
+                  >
+                    {isMember ? '退出する' : '参加する'}
+                  </Button>
+                )}
               </li>
             )
           })}
@@ -130,12 +174,14 @@ function SidebarContent({ channels, selectedItem, onSelect }: SidebarContentProp
 
 function App() {
   const navigate = useNavigate()
+  const { session } = useAuth()
   const [channels, setChannels] = useState<Channel[]>(initialChannels)
   const [selectedItem, setSelectedItem] = useState<SelectedItem>({
     type: 'channel',
     id: initialChannels[0].id,
   })
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [memberChannelIds, setMemberChannelIds] = useState<Set<string>>(new Set())
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -162,18 +208,34 @@ function App() {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const userId = session?.user.id ?? null
+
+  const loadChannels = async () => {
+    const { data, error } = await supabase.from('channels').select('*')
+    if (error) {
+      console.error(error)
+      return
+    }
+    if (data) setChannels(data)
+  }
+
+  const loadMembers = async (uid: string) => {
+    const { data, error } = await supabase
+      .from('channel_members')
+      .select('channel_id')
+      .eq('user_id', uid)
+    if (error) {
+      console.error(error)
+      return
+    }
+    setMemberChannelIds(new Set((data ?? []).map((r) => r.channel_id)))
+  }
+
   useEffect(() => {
-    supabase
-      .from('channels')
-      .select('*')
-      .then(({ data, error }) => {
-        if (error) {
-          console.error(error)
-          return
-        }
-        if (data) setChannels(data)
-      })
-  }, [])
+    loadChannels()
+    if (userId) loadMembers(userId)
+    else setMemberChannelIds(new Set())
+  }, [userId])
 
   const selectedChannelId =
     selectedItem.type === 'channel' ? selectedItem.id : null
@@ -196,26 +258,9 @@ function App() {
         { event: 'INSERT', schema: 'public', table: 'messages' },
         (payload) => {
           console.log('realtime payload', payload)
-          const row = payload.new as {
-            id: string
-            channel_id: string
-            user_name: string
-            content: string
-            created_at: string
-            image_url: string | null
-          }
+          const row = payload.new as DBMessageRow
           if (row.channel_id !== selectedChannelId) return
-          const newMessage: Message = {
-            id: row.id,
-            type: 'channel',
-            parentId: row.channel_id,
-            userName: row.user_name,
-            body: row.content,
-            createdAt: row.created_at,
-            reactions: {},
-            imageUrl: row.image_url,
-          }
-          setMessages((prev) => [...prev, newMessage])
+          setMessages((prev) => [...prev, rowToMessage(row)])
         },
       )
       .subscribe()
@@ -278,6 +323,7 @@ function App() {
       content: text,
       channel_id: selectedChannelId,
       user_name: '自分',
+      user_id: session?.user.id ?? null,
       image_url: imageUrl,
     })
     if (error) {
@@ -335,6 +381,42 @@ function App() {
     navigate('/login')
   }
 
+  const refreshAfterMembership = async () => {
+    if (userId) await loadMembers(userId)
+    await loadChannels()
+    if (selectedChannelId) {
+      const msgs = await loadChannelMessages(selectedChannelId)
+      setMessages(msgs ?? [])
+    }
+  }
+
+  const handleJoin = async (channelId: string) => {
+    if (!userId) return
+    const { error } = await supabase
+      .from('channel_members')
+      .insert({ channel_id: channelId, user_id: userId })
+      .select()
+    if (error) {
+      console.error(error)
+      return
+    }
+    await refreshAfterMembership()
+  }
+
+  const handleLeave = async (channelId: string) => {
+    if (!userId) return
+    const { error } = await supabase
+      .from('channel_members')
+      .delete()
+      .eq('channel_id', channelId)
+      .eq('user_id', userId)
+    if (error) {
+      console.error(error)
+      return
+    }
+    await refreshAfterMembership()
+  }
+
   const headerLabel = selectedChannel
     ? `# ${selectedChannel.name}`
     : selectedDm
@@ -354,6 +436,10 @@ function App() {
           channels={channels}
           selectedItem={selectedItem}
           onSelect={handleSelect}
+          isAuthenticated={!!userId}
+          memberChannelIds={memberChannelIds}
+          onJoin={handleJoin}
+          onLeave={handleLeave}
         />
       </aside>
 
@@ -376,6 +462,10 @@ function App() {
                 channels={channels}
                 selectedItem={selectedItem}
                 onSelect={handleSelect}
+                isAuthenticated={!!userId}
+                memberChannelIds={memberChannelIds}
+                onJoin={handleJoin}
+                onLeave={handleLeave}
               />
             </SheetContent>
           </Sheet>
