@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Menu, Pencil, Smile, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { Menu, Paperclip, Pencil, Smile, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -15,22 +15,46 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import {
-  channels,
-  messages as initialMessages,
+  channels as initialChannels,
+  type Channel,
   type Message,
 } from '@/data/messages'
 import { directMessages } from '@/data/dms'
+import { supabase } from '@/lib/supabase'
+
+async function loadChannelMessages(channelId: string): Promise<Message[] | null> {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('channel_id', channelId)
+    .order('created_at', { ascending: true })
+  if (error) {
+    console.error(error)
+    return null
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    type: 'channel',
+    parentId: row.channel_id,
+    userName: row.user_name,
+    body: row.content,
+    createdAt: row.created_at,
+    reactions: {},
+    imageUrl: row.image_url,
+  }))
+}
 
 type SelectedItem =
   | { type: 'channel'; id: string }
   | { type: 'dm'; id: string }
 
 type SidebarContentProps = {
+  channels: Channel[]
   selectedItem: SelectedItem
   onSelect: (item: SelectedItem) => void
 }
 
-function SidebarContent({ selectedItem, onSelect }: SidebarContentProps) {
+function SidebarContent({ channels, selectedItem, onSelect }: SidebarContentProps) {
   return (
     <div className="flex h-full flex-col bg-[#611f69] text-white">
       <div className="px-4 py-4 border-b border-white/10">
@@ -104,16 +128,20 @@ function SidebarContent({ selectedItem, onSelect }: SidebarContentProps) {
 }
 
 function App() {
+  const [channels, setChannels] = useState<Channel[]>(initialChannels)
   const [selectedItem, setSelectedItem] = useState<SelectedItem>({
     type: 'channel',
-    id: channels[0].id,
+    id: initialChannels[0].id,
   })
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [messages, setMessages] = useState<Message[]>(initialMessages)
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editBody, setEditBody] = useState('')
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const selectedChannel =
     selectedItem.type === 'channel'
@@ -132,24 +160,133 @@ function App() {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  useEffect(() => {
+    supabase
+      .from('channels')
+      .select('*')
+      .then(({ data, error }) => {
+        if (error) {
+          console.error(error)
+          return
+        }
+        if (data) setChannels(data)
+      })
+  }, [])
+
+  const selectedChannelId =
+    selectedItem.type === 'channel' ? selectedItem.id : null
+
+  useEffect(() => {
+    if (!selectedChannelId) {
+      setMessages([])
+      return
+    }
+    loadChannelMessages(selectedChannelId).then((msgs) => {
+      if (msgs) setMessages(msgs)
+    })
+  }, [selectedChannelId])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          console.log('realtime payload', payload)
+          const row = payload.new as {
+            id: string
+            channel_id: string
+            user_name: string
+            content: string
+            created_at: string
+            image_url: string | null
+          }
+          if (row.channel_id !== selectedChannelId) return
+          const newMessage: Message = {
+            id: row.id,
+            type: 'channel',
+            parentId: row.channel_id,
+            userName: row.user_name,
+            body: row.content,
+            createdAt: row.created_at,
+            reactions: {},
+            imageUrl: row.image_url,
+          }
+          setMessages((prev) => [...prev, newMessage])
+        },
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [selectedChannelId])
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
+
   const handleSelect = (item: SelectedItem) => {
     setSelectedItem(item)
     setMobileOpen(false)
   }
 
-  const handleSend = () => {
-    if (!input.trim()) return
-    const newMessage: Message = {
-      id: crypto.randomUUID(),
-      type: selectedItem.type,
-      parentId: selectedItem.id,
-      userName: '自分',
-      body: input,
-      createdAt: new Date().toISOString(),
-      reactions: {},
-    }
-    setMessages((prev) => [...prev, newMessage])
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setAttachedFile(file)
+    setPreviewUrl(URL.createObjectURL(file))
+  }
+
+  const handleClearAttachment = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setAttachedFile(null)
+    setPreviewUrl(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleSend = async () => {
+    if (!input.trim() && !attachedFile) return
+    if (!selectedChannelId) return
+    const text = input
+    const file = attachedFile
     setInput('')
+
+    let imageUrl: string | null = null
+    if (file) {
+      const ext = file.name.split('.').pop()
+      const filePath = `${Date.now()}_${crypto.randomUUID()}.${ext}`
+      const { error: uploadError } = await supabase.storage
+        .from('chat-images')
+        .upload(filePath, file, { contentType: file.type })
+      if (uploadError) {
+        console.error(uploadError)
+        return
+      }
+      const { data: urlData } = supabase.storage
+        .from('chat-images')
+        .getPublicUrl(filePath)
+      imageUrl = urlData.publicUrl
+    }
+
+    const { error } = await supabase.from('messages').insert({
+      content: text,
+      channel_id: selectedChannelId,
+      user_name: '自分',
+      image_url: imageUrl,
+    })
+    if (error) {
+      console.error(error)
+      return
+    }
+
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setAttachedFile(null)
+    setPreviewUrl(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const handleStartEdit = (id: string, body: string) => {
@@ -206,7 +343,11 @@ function App() {
   return (
     <div className="flex min-h-screen">
       <aside className="hidden md:flex w-[260px] flex-shrink-0">
-        <SidebarContent selectedItem={selectedItem} onSelect={handleSelect} />
+        <SidebarContent
+          channels={channels}
+          selectedItem={selectedItem}
+          onSelect={handleSelect}
+        />
       </aside>
 
       <main className="flex-1 flex flex-col">
@@ -225,6 +366,7 @@ function App() {
             <SheetContent side="left" className="p-0 w-[260px]">
               <SheetTitle className="sr-only">チャンネル一覧</SheetTitle>
               <SidebarContent
+                channels={channels}
                 selectedItem={selectedItem}
                 onSelect={handleSelect}
               />
@@ -292,6 +434,13 @@ function App() {
                     ) : (
                       <>
                         <p className="text-sm whitespace-pre-wrap">{message.body}</p>
+                        {message.imageUrl && (
+                          <img
+                            src={message.imageUrl}
+                            alt=""
+                            className="max-w-xs rounded-lg mt-1"
+                          />
+                        )}
                         {Object.entries(message.reactions).some(
                           ([, count]) => count > 0,
                         ) && (
@@ -369,6 +518,23 @@ function App() {
         </div>
 
         <div className="sticky bottom-0 bg-background border-t px-4 md:px-6 py-4">
+          {previewUrl && (
+            <div className="relative inline-block mb-2">
+              <img
+                src={previewUrl}
+                alt={attachedFile?.name ?? '添付画像プレビュー'}
+                className="max-h-40 rounded-lg border"
+              />
+              <button
+                type="button"
+                onClick={handleClearAttachment}
+                aria-label="添付を取り消す"
+                className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-foreground text-background flex items-center justify-center shadow hover:opacity-90"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           <form
             className="flex gap-2 items-end"
             onSubmit={(e) => {
@@ -376,6 +542,22 @@ function App() {
               handleSend()
             }}
           >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label="画像を添付"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip className="h-5 w-5" />
+            </Button>
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
