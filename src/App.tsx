@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Menu, Paperclip, Pencil, Smile, Trash2, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { LogOut, Menu, Paperclip, Pencil, Smile, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -128,6 +129,7 @@ function SidebarContent({ channels, selectedItem, onSelect }: SidebarContentProp
 }
 
 function App() {
+  const navigate = useNavigate()
   const [channels, setChannels] = useState<Channel[]>(initialChannels)
   const [selectedItem, setSelectedItem] = useState<SelectedItem>({
     type: 'channel',
@@ -328,6 +330,11 @@ function App() {
 
   const REACTION_EMOJIS = ['👍', '❤️', '😂', '🎉', '😮']
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    navigate('/login')
+  }
+
   const headerLabel = selectedChannel
     ? `# ${selectedChannel.name}`
     : selectedDm
@@ -373,6 +380,16 @@ function App() {
             </SheetContent>
           </Sheet>
           <h2 className="text-xl font-bold">{headerLabel}</h2>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={handleSignOut}
+            className="ml-auto"
+          >
+            <LogOut className="h-4 w-4" />
+            ログアウト
+          </Button>
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-4">
