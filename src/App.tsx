@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LogOut, Menu, Paperclip, Pencil, Smile, Trash2, X } from 'lucide-react'
+import { AlertCircle, LogOut, Menu, Paperclip, Pencil, Smile, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Popover,
   PopoverContent,
@@ -73,6 +75,8 @@ type SidebarContentProps = {
   memberChannelIds: Set<string>
   onJoin: (channelId: string) => void
   onLeave: (channelId: string) => void
+  loading: boolean
+  error: string | null
 }
 
 function SidebarContent({
@@ -83,6 +87,8 @@ function SidebarContent({
   memberChannelIds,
   onJoin,
   onLeave,
+  loading,
+  error,
 }: SidebarContentProps) {
   return (
     <div className="flex h-full flex-col bg-[#611f69] text-white">
@@ -93,6 +99,17 @@ function SidebarContent({
         <h2 className="px-2 mb-2 text-xs font-semibold uppercase tracking-wide text-white/70">
           チャンネル
         </h2>
+        {loading ? (
+          <div className="space-y-2 px-2">
+            <Skeleton className="h-5 w-32 bg-white/20" />
+            <Skeleton className="h-5 w-28 bg-white/20" />
+            <Skeleton className="h-5 w-36 bg-white/20" />
+          </div>
+        ) : error ? (
+          <p className="px-2 text-xs text-red-200">{error}</p>
+        ) : channels.length === 0 ? (
+          <p className="px-2 text-xs text-white/70">チャンネルがありません</p>
+        ) : (
         <ul className="space-y-0.5">
           {channels.map((channel) => {
             const isSelected =
@@ -130,6 +147,7 @@ function SidebarContent({
             )
           })}
         </ul>
+        )}
 
         <h2 className="text-xs uppercase tracking-wide opacity-70 px-3 py-2 mt-2">
           ダイレクトメッセージ
@@ -188,6 +206,10 @@ function App() {
   const [editBody, setEditBody] = useState('')
   const [attachedFile, setAttachedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [channelsLoading, setChannelsLoading] = useState(true)
+  const [channelsError, setChannelsError] = useState<string | null>(null)
+  const [messagesLoading, setMessagesLoading] = useState(false)
+  const [messagesError, setMessagesError] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -211,9 +233,13 @@ function App() {
   const userId = session?.user.id ?? null
 
   const loadChannels = async () => {
+    setChannelsLoading(true)
+    setChannelsError(null)
     const { data, error } = await supabase.from('channels').select('*')
+    setChannelsLoading(false)
     if (error) {
       console.error(error)
+      setChannelsError('チャンネルの読み込みに失敗しました')
       return
     }
     if (data) setChannels(data)
@@ -243,10 +269,19 @@ function App() {
   useEffect(() => {
     if (!selectedChannelId) {
       setMessages([])
+      setMessagesError(null)
+      setMessagesLoading(false)
       return
     }
+    setMessagesLoading(true)
+    setMessagesError(null)
     loadChannelMessages(selectedChannelId).then((msgs) => {
-      if (msgs) setMessages(msgs)
+      setMessagesLoading(false)
+      if (msgs === null) {
+        setMessagesError('メッセージの読み込みに失敗しました')
+        return
+      }
+      setMessages(msgs)
     })
   }, [selectedChannelId])
 
@@ -255,12 +290,23 @@ function App() {
       .channel('messages')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
+        { event: '*', schema: 'public', table: 'messages' },
         (payload) => {
-          console.log('realtime payload', payload)
-          const row = payload.new as DBMessageRow
-          if (row.channel_id !== selectedChannelId) return
-          setMessages((prev) => [...prev, rowToMessage(row)])
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new as DBMessageRow
+            if (row.channel_id !== selectedChannelId) return
+            setMessages((prev) =>
+              prev.some((m) => m.id === row.id) ? prev : [...prev, rowToMessage(row)],
+            )
+          } else if (payload.eventType === 'UPDATE') {
+            const row = payload.new as DBMessageRow
+            setMessages((prev) =>
+              prev.map((m) => (m.id === row.id ? rowToMessage(row) : m)),
+            )
+          } else if (payload.eventType === 'DELETE') {
+            const row = payload.old as { id: string }
+            setMessages((prev) => prev.filter((m) => m.id !== row.id))
+          }
         },
       )
       .subscribe()
@@ -342,19 +388,35 @@ function App() {
     setEditBody(body)
   }
 
-  const handleSaveEdit = (id: string) => {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, body: editBody } : m)),
-    )
+  const handleSaveEdit = async (id: string) => {
+    const newBody = editBody
     setEditingId(null)
+    const { error } = await supabase
+      .from('messages')
+      .update({ content: newBody })
+      .eq('id', id)
+    if (error) {
+      console.error(error)
+      setMessagesError('メッセージの更新に失敗しました')
+      return
+    }
+    setMessages((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, body: newBody } : m)),
+    )
   }
 
   const handleCancelEdit = () => {
     setEditingId(null)
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm('削除しますか？')) return
+    const { error } = await supabase.from('messages').delete().eq('id', id)
+    if (error) {
+      console.error(error)
+      setMessagesError('メッセージの削除に失敗しました')
+      return
+    }
     setMessages((prev) => prev.filter((m) => m.id !== id))
   }
 
@@ -440,6 +502,8 @@ function App() {
           memberChannelIds={memberChannelIds}
           onJoin={handleJoin}
           onLeave={handleLeave}
+          loading={channelsLoading}
+          error={channelsError}
         />
       </aside>
 
@@ -466,6 +530,8 @@ function App() {
                 memberChannelIds={memberChannelIds}
                 onJoin={handleJoin}
                 onLeave={handleLeave}
+                loading={channelsLoading}
+                error={channelsError}
               />
             </SheetContent>
           </Sheet>
@@ -483,7 +549,25 @@ function App() {
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-4">
-          {visibleMessages.length === 0 ? (
+          {messagesLoading ? (
+            <div className="space-y-4">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex gap-3">
+                  <Skeleton className="h-9 w-9 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-4 w-3/4" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : messagesError ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>読み込みに失敗しました</AlertTitle>
+              <AlertDescription>{messagesError}</AlertDescription>
+            </Alert>
+          ) : visibleMessages.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               まだメッセージはありません。
             </p>
